@@ -1,0 +1,47 @@
+function pesqVal = calculatePESQ(signal1, signal2)
+% calculatePESQ calculates an approximate PESQ score between two signals.
+% Inputs:
+%   signal1 - Reference signal (32x1)
+%   signal2 - Degraded signal (32x1)
+% Output:
+%   pesqVal - Approximated PESQ value (score between 1 and 4.5)
+%
+% Note: This is a simplified approximation for demonstration purposes.
+% The real PESQ algorithm is based on ITU-T P.862 and involves a more
+% sophisticated perceptual model.
+
+% Ensure column vectors
+signal1 = signal1(:);
+signal2 = signal2(:);
+
+% Normalize the signals to avoid scaling issues
+signal1 = signal1 / max(abs(signal1) + eps);
+signal2 = signal2 / max(abs(signal2) + eps);
+
+% Apply a simple pre-emphasis filter (to mimic some auditory pre-processing)
+preemph = [1 -0.95];
+sig1_pre = filter(preemph, 1, signal1);
+sig2_pre = filter(preemph, 1, signal2);
+
+% Compute FFT for both pre-emphasized signals
+N = length(signal1);
+S1 = fft(sig1_pre, N);
+S2 = fft(sig2_pre, N);
+
+% Use only the first half of the spectrum (real signals)
+halfN = floor(N/2);
+mag1 = abs(S1(1:halfN));
+mag2 = abs(S2(1:halfN));
+
+% Compute the log-spectral distance
+logSpecDiff = log10(mag1 + eps) - log10(mag2 + eps);
+lsd = sqrt(mean(logSpecDiff.^2));
+
+% Map the log-spectral distance to an approximate PESQ score.
+% Here we assume a linear mapping:
+% A lower LSD (i.e. smaller error) gives a higher PESQ score.
+% Typical PESQ scores range between 1 (poor) and 4.5 (excellent).
+pesqVal = 4.5 - (lsd * 2);  % Scale factor chosen for demonstration
+pesqVal = max(1, min(4.5, pesqVal)); % Clamp value to [1, 4.5]
+
+end

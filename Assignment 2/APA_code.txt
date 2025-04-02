@@ -1,0 +1,79 @@
+function [y, err, Wts] = APA(u, d, mu, Adapt, Reset)
+% APA - Affine Projection Algorithm implementation for a Simulink MATLAB Function block.
+%
+% This function implements an adaptive FIR filter with 40 taps.
+% The block inputs are:
+%   u     - input vector (32x1)
+%   d     - desired signal (32x1)
+%   mu    - step size (scalar)
+%   Adapt - adaptation flag (nonzero enables weight update)
+%   Reset - reset flag (nonzero reinitializes the persistent states)
+%
+% The outputs are:
+%   y    - filter output vector (32x1)
+%   err  - error vector (desired minus output) (32x1)
+%   Wts  - current filter coefficient vector (40x1)
+%
+% The APA update uses a sliding window of the last P input snapshots and corresponding errors.
+% The weight update equation is:
+%
+%      w(k+1) = w(k) + mu * X_ap * inv(X_ap'*X_ap + delta*I) * e_ap
+%
+% where:
+%   X_ap is the data matrix collecting the most recent P delay-line vectors (size 40xP)
+%   e_ap is the corresponding error vector (Px1)
+
+% Initialize persistent variables using the same data type as the input u.
+persistent w uBuffer
+if isempty(w) || Reset
+    w = zeros(40, 1, 'like', u);
+end
+if isempty(uBuffer) || Reset
+    uBuffer = zeros(40, 1, 'like', u);
+end
+
+% Number of samples per block (expected to be 32)
+N = length(u);  
+y   = zeros(N, 1, 'like', u);
+err = zeros(N, 1, 'like', u);
+
+% --- APA Parameters ---
+P = 8;            % Projection order (number of delay-line snapshots to reuse)
+delta = 1e-6;     % Regularization constant (to avoid ill-conditioning)
+
+% Initialize matrices to store delay-line snapshots and corresponding errors.
+X_ap = zeros(40, P, 'like', u);
+e_ap = zeros(P, 1, 'like', u);
+
+% Process each sample in the input block.
+for n = 1:N
+    % Update the delay-line: shift the current buffer and insert the new sample at the top.
+    uBuffer = [u(n); uBuffer(1:end-1)];
+    
+    % Compute the filter output as the inner product of weights and the current delay-line.
+    y(n) = w' * uBuffer;
+    
+    % Calculate the error signal (desired minus filter output).
+    err(n) = d(n) - y(n);
+    
+    % Store the current delay-line snapshot and error for APA update.
+    if n <= P
+        X_ap(:, n) = uBuffer;
+        e_ap(n)   = err(n);
+    else
+        % Use a sliding window: discard the oldest column and add the new one.
+        X_ap = [X_ap(:, 2:end), uBuffer];
+        e_ap = [e_ap(2:end); err(n)];
+    end
+end
+
+% If adaptation is enabled and we have at least P samples, update the filter coefficients.
+if Adapt && (N >= P)
+    % Compute the APA weight update.
+    % The term (X_ap'*X_ap + delta*I) is a P x P matrix that is inverted.
+    w = w + mu * X_ap * ((X_ap' * X_ap + delta * eye(P, 'like', u)) \ e_ap);
+end
+
+% Output the current weight vector.
+Wts = w;
+end
